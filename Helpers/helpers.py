@@ -27,3 +27,21 @@ def get_local_hours(business_hours, day):
         if business_hours[i][1] == day:
             return business_hours[i][2], business_hours[i][3]
     return DEFAULT_START_LOCAL, DEFAULT_END_LOCAL
+
+def get_overlap_duration(time_frame1_start, time_frame1_end, time_frame2_start, time_frame2_end):
+    try :
+        start1 = datetime.strptime(time_frame1_start, "%H:%M:%S")
+        end1 = datetime.strptime(time_frame1_end, "%H:%M:%S")
+        start2 = datetime.strptime(time_frame2_start, "%H:%M:%S")
+        end2 = datetime.strptime(time_frame2_end, "%H:%M:%S")
+
+        start_interval = max(start1, start2)
+        end_interval = min(end1, end2)
+
+        if start_interval < end_interval:
+            duration = (end_interval - start_interval).total_seconds() / 60 
+            return duration
+        else:
+            return 0
+    except :
+        return 0

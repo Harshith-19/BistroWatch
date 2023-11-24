@@ -82,6 +82,10 @@ def report_generation_store(store_id, cursor):
 
         last_hour_threshold = CURRENT_TIME - timedelta(hours=1)
         last_day_threshold = CURRENT_TIME - timedelta(days=1)
+        last_week_threshold = CURRENT_TIME - timedelta(weeks=1)
+        first_report_day = {}
+        first_report_hour = {}
+        first_report_week = {}
 
         cursor.execute("""
             SELECT *,
@@ -111,16 +115,69 @@ def report_generation_store(store_id, cursor):
         business_hours = cursor.fetchall()
 
         local_time = get_local_time(CURRENT_TIME, timezone)
+        local_last_hour_threshold = get_local_time(last_hour_threshold, timezone)
+        local_last_day_threshold = get_local_time(last_day_threshold, timezone)
+        local_last_week_threshold = get_local_time(last_week_threshold, timezone)
 
         for index, entry in enumerate(store_reports):
             report_time = get_local_time(store_reports[index][2], timezone)
             report_day = get_local_day(store_reports[index][2], timezone)
             if (index > 0):
-                report_frame_end = store_reports[index-1][2]
+                report_frame_end = get_local_time(store_reports[index-1][2])
             else:
                 report_frame_end = local_time
             
-            local_start_time, local_end_time = get_local_hours(business_hours)
+            local_start_time, local_end_time = get_local_hours(business_hours, report_day)
+            duration = get_overlap_duration(local_start_time, local_end_time, report_time, report_frame_end)
 
+            if store_reports[index][3] == True:
+                start_duration = get_overlap_duration(local_start_time, local_end_time, local_last_hour_threshold, report_time)
+                first_report_hour["duration"] = start_duration
+                first_report_hour["status"] = store_reports[index][1]
+                if store_reports[index][1] == ACTIVE:
+                    metrics["uptime_last_hour"] += duration
+                elif store_reports[index][1] == INACTIVE:
+                    metrics["downtime_last_hour"] += duration
+
+            if store_reports[index][4] == True:
+                start_duration = get_overlap_duration(local_start_time, local_end_time, local_last_day_threshold, report_time)
+                first_report_day["duration"] = start_duration
+                first_report_day["status"] = store_reports[index][1]
+                if store_reports[index][1] == ACTIVE:
+                    metrics["uptime_last_day"] += duration
+                elif store_reports[index][1] == INACTIVE:
+                    metrics["downtime_last_day"] += duration   
+            
+            start_duration = get_overlap_duration(local_start_time, local_end_time, local_last_week_threshold, report_time)
+            first_report_week["duration"] = start_duration
+            first_report_week["status"] = store_reports[index][1]
+            if store_reports[index][1] == ACTIVE:
+                metrics["uptime_last_week"] += duration
+            elif store_reports[index][1] == INACTIVE:
+                metrics["downtime_last_week"] += duration
+        
+        if first_report_hour["status"] == ACTIVE:
+            metrics["uptime_last_hour"] += first_report_hour["status"]
+        elif first_report_hour["status"] == INACTIVE:
+            metrics["downtime_last_hour"] += first_report_hour["status"]
+        if first_report_day["status"] == ACTIVE:
+            metrics["uptime_last_day"] += first_report_day["status"]
+        elif first_report_day["status"] == INACTIVE:
+            metrics["downtime_last_day"] += first_report_day["status"]
+        if first_report_week["status"] == ACTIVE:
+            metrics["uptime_last_week"] += first_report_week["status"]
+        elif first_report_week["status"] == INACTIVE:
+            metrics["downtime_last_week"] += first_report_week["status"]
+        
+        metrics["uptime_last_hour"] = round(metrics["uptime_last_hour"])
+        metrics["downtime_last_hour"] = round(metrics["downtime_last_hour"])
+        metrics["uptime_last_day"] = round(metrics["uptime_last_day"]/60)
+        metrics["downtime_last_day"] = round(metrics["downtime_last_day"]/60)
+        metrics["uptime_last_week"] = round(metrics["uptime_last_week"]/60)
+        metrics["downtime_last_week"] = round(metrics["downtime_last_week"]/60)
+
+        return metrics
+    
     except psycopg2.Error as e:
         print(f"Error: {e}")
+        return metrics
