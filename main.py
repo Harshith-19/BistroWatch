@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, Response
 import psycopg2
 import os
 from Helpers.report import generate_report
+from Helpers.constants import *
 from connection import get_db_connection
 
 app = FastAPI()
@@ -29,10 +30,10 @@ def get_report(report_id: str):
             report_name = report['name']
             report_status = report['status']
 
-            if report_status == 'running':
+            if report_status == RUNNING_STATUS:
                 return {"message": "Report is currently running"}
 
-            elif report_status == 'completed':
+            elif report_status == COMPLETE_STATUS:
                 file_path = f"reports/{report_name}.csv"
                 if os.path.exists(file_path):
                     with open(file_path, 'rb') as file:
