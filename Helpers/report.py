@@ -1,7 +1,8 @@
 from connection import get_db_connection
 import psycopg2
 from Helpers.constants import *
-from datetime import datetime, timezone
+from Helpers.helpers import *
+from datetime import datetime, timezone, timedelta
 import threading
 import os
 import csv
@@ -51,7 +52,7 @@ def report_generation_thread(report_id):
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
             for store_id in store_ids:
-                metrics = report_generation_store(store_id)
+                metrics = report_generation_store(store_id, )
                 writer.writerow({'store_id': store_id, **metrics})
         
         current_utc_time = datetime.utcnow().replace(tzinfo=timezone.utc)
@@ -67,5 +68,59 @@ def report_generation_thread(report_id):
         conn.close()
 
 
-def report_generation_store(store_id):
-    pass
+def report_generation_store(store_id, cursor):
+    try:
+        metrics = {
+            "store_id" : store_id,
+            "uptime_last_hour" : 0,
+            "uptime_last_day" : 0,
+            "uptime_last_week" : 0,
+            "downtime_last_hour" : 0,
+            "downtime_last_day" : 0,
+            "downtime_last_week" : 0
+        }
+
+        last_hour_threshold = CURRENT_TIME - timedelta(hours=1)
+        last_day_threshold = CURRENT_TIME - timedelta(days=1)
+
+        cursor.execute("""
+            SELECT *,
+                CASE 
+                    WHEN timestamp_utc >= %s THEN TRUE 
+                    ELSE FALSE 
+                END AS in_last_hour,
+                CASE 
+                    WHEN timestamp_utc BETWEEN %s AND %s THEN TRUE 
+                    ELSE FALSE 
+                END AS in_last_day
+            FROM store_status
+            WHERE store_id = %s
+            AND timestamp_utc BETWEEN %s - interval '1 week' AND %s
+        """, (last_hour_threshold, last_day_threshold, CURRENT_TIME, store_id, CURRENT_TIME, CURRENT_TIME))   
+        store_reports = cursor.fetchall()
+        store_reports = sorted(store_reports, key=lambda x: x[2], reverse=True)
+
+        cursor.execute("SELECT timezone_str FROM timezone WHERE store_id = %s", (store_id,))
+        timezone = cursor.fetchone()
+        if timezone:
+            timezone = timezone[0]
+        else:
+            timezone = DEFAULT_TIMEZONE
+        
+        cursor.execute("SELECT * FROM menu_hours WHERE store_id = %s", (store_id,))
+        business_hours = cursor.fetchall()
+
+        local_time = get_local_time(CURRENT_TIME, timezone)
+
+        for index, entry in enumerate(store_reports):
+            report_time = get_local_time(store_reports[index][2], timezone)
+            report_day = get_local_day(store_reports[index][2], timezone)
+            if (index > 0):
+                report_frame_end = store_reports[index-1][2]
+            else:
+                report_frame_end = local_time
+            
+            local_start_time, local_end_time = get_local_hours(business_hours)
+
+    except psycopg2.Error as e:
+        print(f"Error: {e}")
